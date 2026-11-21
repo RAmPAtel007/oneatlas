@@ -1,69 +1,129 @@
-import Image from "next/image";
+import { ArrowRight, Sparkles } from "lucide-react";
+import Link from "next/link";
+import { LabAvatar } from "@/components/lab-avatar";
+import { ModelGrid } from "@/components/model-list";
+import { ButtonLink, Card, SectionTitle } from "@/components/ui";
+import { formatDate, formatNumber, formatPrice, modelHref } from "@/lib/format";
+import { getCatalogStats, getLeaderboard, getRecentModels, getValueLandscape, listLabs } from "@/server/services/catalog";
 
-export default function Home() {
+const QUICK_FILTERS = [
+  { label: "Reasoning", href: "/models?cap=reasoning" },
+  { label: "Vision", href: "/models?cap=vision" },
+  { label: "Open weights", href: "/models?cap=open-weights" },
+  { label: "Free tier", href: "/models?cap=free" },
+  { label: "1M+ context", href: "/models?minContext=1000000" },
+  { label: "Cheapest first", href: "/models?sort=price" },
+  { label: "Embeddings", href: "/models?type=embedding" },
+];
+
+// Every query here is `'use cache'`, so the whole page is prerendered into the
+// static shell and revalidated hourly — no database hit per visitor.
+export default async function HomePage() {
+  const [stats, recent, top, labs, value] = await Promise.all([
+    getCatalogStats(),
+    getRecentModels(6),
+    getLeaderboard("aa-intelligence", { limit: 5, openWeights: false }),
+    listLabs(),
+    getValueLandscape(),
+  ]);
+  const bestValue = value.filter((p) => p.onFrontier).sort((a, b) => b.score - a.score).slice(0, 4);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="space-y-14">
+      <section className="pt-6 text-center sm:pt-12">
+        <div className="mx-auto mb-4 inline-flex items-center gap-2 rounded-full border bg-card px-3 py-1 text-xs text-muted">
+          <Sparkles className="size-3.5 text-accent" /> {formatNumber(stats.models)} models · {stats.labs} labs · {stats.providers} providers
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+        <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">Every AI model, compared.</h1>
+        <p className="mx-auto mt-4 max-w-xl text-muted">
+          Specs, pricing, capabilities, benchmarks and the providers that serve them, synced daily from public sources.
+        </p>
+        <div className="mt-6 flex justify-center gap-2">
+          <ButtonLink href="/models" variant="primary">Browse models <ArrowRight className="size-4" /></ButtonLink>
+          <ButtonLink href="/rankings">See rankings</ButtonLink>
         </div>
-      </main>
+        <div className="mt-6 flex flex-wrap justify-center gap-2">
+          {QUICK_FILTERS.map((f) => (
+            <Link key={f.href} href={f.href} className="rounded-full border bg-card px-3 py-1 text-xs hover:border-accent hover:text-accent">
+              {f.label}
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          { label: "Tool calling", value: stats.coverage.toolCalling },
+          { label: "Reasoning", value: stats.coverage.reasoning },
+          { label: "Vision input", value: stats.coverage.vision },
+          { label: "Open weights", value: stats.coverage.openWeights },
+        ].map((c) => (
+          <Card key={c.label} className="p-4">
+            <div className="flex items-baseline justify-between text-sm">
+              <span className="text-muted">{c.label}</span>
+              <span className="tabular font-semibold">{c.value}%</span>
+            </div>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-subtle">
+              <div className="h-full rounded-full bg-accent" style={{ width: `${c.value}%` }} />
+            </div>
+            <div className="mt-2 text-xs text-muted">of active text models</div>
+          </Card>
+        ))}
+      </section>
+
+      <section>
+        <SectionTitle href="/models">Recently released</SectionTitle>
+        <ModelGrid models={recent} />
+      </section>
+
+      <section className="grid gap-6 lg:grid-cols-2">
+        <div>
+          <SectionTitle href="/rankings">Most intelligent</SectionTitle>
+          <Card className="divide-y">
+            {top?.rows.map((r) => (
+              <Link key={r.model.slug} href={modelHref(r.model.slug)} className="flex items-center gap-3 px-4 py-3 hover:bg-subtle/60">
+                <span className="tabular w-5 text-sm text-muted">{r.rank}</span>
+                <LabAvatar slug={r.model.lab.slug} name={r.model.lab.name} size="sm" />
+                <span className="flex-1 truncate text-sm font-medium">{r.model.name}</span>
+                <span className="tabular text-sm font-semibold">{r.score.toFixed(1)}</span>
+              </Link>
+            ))}
+          </Card>
+        </div>
+        <div>
+          <SectionTitle href="/rankings#value">Best value (Pareto frontier)</SectionTitle>
+          <Card className="divide-y">
+            {bestValue.map((p) => (
+              <Link key={p.slug} href={modelHref(p.slug)} className="flex items-center gap-3 px-4 py-3 hover:bg-subtle/60">
+                <LabAvatar slug={p.labSlug} name={p.lab} size="sm" />
+                <span className="flex-1 truncate text-sm font-medium">{p.name}</span>
+                <span className="text-xs text-muted">{formatPrice(p.price)} blended</span>
+                <span className="tabular w-10 text-right text-sm font-semibold">{p.score.toFixed(1)}</span>
+              </Link>
+            ))}
+          </Card>
+          <p className="mt-2 text-xs text-muted">No other model is both cheaper and smarter than these.</p>
+        </div>
+      </section>
+
+      <section>
+        <SectionTitle href="/labs">AI labs</SectionTitle>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {labs.slice(0, 12).map((lab) => (
+            <Link key={lab.slug} href={`/labs/${lab.slug}`} className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2.5 hover:border-accent/50">
+              <LabAvatar slug={lab.slug} name={lab.name} />
+              <div className="min-w-0">
+                <div className="truncate text-sm font-medium">{lab.name}</div>
+                <div className="text-xs text-muted">{lab.modelCount} models</div>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      {stats.lastSyncedAt && (
+        <p className="text-center text-xs text-muted">Data last synced {formatDate(stats.lastSyncedAt)}</p>
+      )}
     </div>
   );
 }

@@ -1,26 +1,68 @@
 @import "tailwindcss";
 
+/* Design tokens. Components only use these semantic names, so the dark theme
+   is a single block of overrides. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #fafafa;
+  --foreground: #0a0a0b;
+  --card: #ffffff;
+  --muted: #6b6b76;
+  --subtle: #f2f2f4;
+  --border: #e4e4e9;
+  --accent: #4f46e5;
+  --accent-fg: #ffffff;
+  --accent-soft: #eef0ff;
+  --good: #047857;
+  --good-soft: #e7f7ef;
+  --warn: #b45309;
+  --warn-soft: #fdf3e2;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #09090b;
+    --foreground: #f4f4f5;
+    --card: #111114;
+    --muted: #a1a1aa;
+    --subtle: #19191d;
+    --border: #27272c;
+    --accent: #8b8cf8;
+    --accent-fg: #09090b;
+    --accent-soft: #1c1b3a;
+    --good: #34d399;
+    --good-soft: #0c2a20;
+    --warn: #fbbf24;
+    --warn-soft: #2d2410;
+  }
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-good: var(--good);
+  --color-good-soft: var(--good-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+}
+
+* {
+  border-color: var(--border);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
 }

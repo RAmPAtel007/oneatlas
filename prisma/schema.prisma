@@ -1,0 +1,232 @@
+// OneAtlas data model
+//
+//   Lab 1──* Model *──* Provider        (join table = Offering: one "API listing")
+//   Model 1──* BenchmarkScore *──1 Benchmark
+//   Offering 1──* PriceSnapshot          (price history, written only when a price changes)
+//
+// A Lab *creates* models (Meta, OpenAI). A Provider *serves* them over an API
+// (Groq, Together, Bedrock), each at its own price and limits — so the same
+// model appears once in `Model` but many times in `Offering`.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ModelType {
+  TEXT
+  IMAGE
+  VIDEO
+  SPEECH
+  TRANSCRIPTION
+  EMBEDDING
+  RERANKING
+  REALTIME
+}
+
+enum ModelStatus {
+  ACTIVE
+  BETA
+  ALPHA
+  DEPRECATED
+}
+
+enum Modality {
+  TEXT
+  IMAGE
+  AUDIO
+  VIDEO
+  PDF
+}
+
+enum IngestionStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+model Lab {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  website     String?
+  country     String?
+  description String?
+  models      Model[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "labs_name_trgm_idx")
+  @@map("labs")
+}
+
+model Provider {
+  id         String     @id @default(cuid())
+  slug       String     @unique
+  name       String
+  docsUrl    String?
+  apiBaseUrl String?
+  sdkPackage String?
+  /// Subscription "coding/token plans" list $0 per-token prices because usage is
+  /// prepaid. They are excluded from min-price and "free" calculations.
+  isSubscription Boolean    @default(false)
+  /// Only these providers' $0 listings count as genuinely free. Elsewhere $0
+  /// usually means "bundled in a paid product" or "runs locally".
+  hasFreeTier    Boolean    @default(false)
+  offerings      Offering[]
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "providers_name_trgm_idx")
+  @@map("providers")
+}
+
+model Model {
+  id               String      @id @default(cuid())
+  /// Canonical id, e.g. "anthropic/claude-opus-4-8". Doubles as the URL path.
+  slug             String      @unique
+  name             String
+  description      String?
+  family           String?
+  labId            String
+  lab              Lab         @relation(fields: [labId], references: [id], onDelete: Cascade)
+  type             ModelType   @default(TEXT)
+  status           ModelStatus @default(ACTIVE)
+  inputModalities  Modality[]
+  outputModalities Modality[]
+
+  // Capabilities
+  reasoning        Boolean @default(false)
+  toolCalling      Boolean @default(false)
+  structuredOutput Boolean @default(false)
+  temperature      Boolean @default(false)
+  attachments      Boolean @default(false)
+  openWeights      Boolean @default(false)
+
+  // Limits (tokens) and dates
+  contextWindow   Int?
+  maxOutputTokens Int?
+  knowledgeCutoff String?
+  releaseDate     DateTime?
+  lastUpdated     DateTime?
+
+  // Denormalized from Offering / BenchmarkScore at ingestion time so the
+  // listing page can filter + sort with plain indexed columns (no GROUP BY
+  // per request). Recomputed by one SQL statement after every sync.
+  //
+  // inputPrice/outputPrice = reference price: the lab's own API price when it
+  // sells the model, otherwise the median across trusted providers. The
+  // cheapest listing is kept separately because resellers can be outliers.
+  inputPrice        Float?
+  outputPrice       Float?
+  priceIsOfficial   Boolean @default(false)
+  minInputPrice     Float?
+  minOutputPrice    Float?
+  isFree            Boolean @default(false)
+  providerCount     Int     @default(0)
+  intelligenceScore Float?
+
+  offerings Offering[]
+  scores    BenchmarkScore[]
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@index([labId])
+  @@index([type, status])
+  @@index([releaseDate])
+  @@index([inputPrice])
+  @@index([contextWindow])
+  @@index([intelligenceScore])
+  @@index([providerCount])
+  // Trigram GIN indexes: make `ILIKE '%claude%'` and fuzzy similarity() fast.
+  // Requires the pg_trgm extension (created in the init migration).
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "models_name_trgm_idx")
+  @@index([slug(ops: raw("gin_trgm_ops"))], type: Gin, map: "models_slug_trgm_idx")
+  @@map("models")
+}
+
+/// One model as sold by one provider (an "API listing"). Prices are USD per 1M tokens.
+model Offering {
+  id              String          @id @default(cuid())
+  modelId         String
+  model           Model           @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  providerId      String
+  provider        Provider        @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  /// The id you pass to this provider's API (often differs from the canonical slug).
+  providerModelId String
+  inputPrice      Float?
+  outputPrice     Float?
+  cacheReadPrice  Float?
+  cacheWritePrice Float?
+  contextWindow   Int?
+  maxOutputTokens Int?
+  deprecated      Boolean         @default(false)
+  snapshots       PriceSnapshot[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@unique([providerId, providerModelId])
+  @@index([modelId])
+  @@map("offerings")
+}
+
+model PriceSnapshot {
+  id          String   @id @default(cuid())
+  offeringId  String
+  offering    Offering @relation(fields: [offeringId], references: [id], onDelete: Cascade)
+  inputPrice  Float?
+  outputPrice Float?
+  capturedAt  DateTime @default(now())
+
+  @@index([offeringId, capturedAt])
+  @@map("price_snapshots")
+}
+
+model Benchmark {
+  id             String           @id @default(cuid())
+  slug           String           @unique
+  name           String
+  category       String
+  description    String?
+  source         String
+  sourceUrl      String?
+  /// "index" (0-100) or "elo"
+  unit           String
+  higherIsBetter Boolean          @default(true)
+  sortOrder      Int              @default(0)
+  scores         BenchmarkScore[]
+
+  @@map("benchmarks")
+}
+
+model BenchmarkScore {
+  id          String    @id @default(cuid())
+  modelId     String
+  model       Model     @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  benchmarkId String
+  benchmark   Benchmark @relation(fields: [benchmarkId], references: [id], onDelete: Cascade)
+  score       Float
+  capturedAt  DateTime  @default(now())
+
+  @@unique([modelId, benchmarkId])
+  @@index([benchmarkId, score])
+  @@map("benchmark_scores")
+}
+
+/// Audit log of every data sync — powers the "data freshness" UI and debugging.
+model IngestionRun {
+  id         String          @id @default(cuid())
+  status     IngestionStatus @default(RUNNING)
+  trigger    String
+  startedAt  DateTime        @default(now())
+  finishedAt DateTime?
+  stats      Json?
+  error      String?
+
+  @@index([startedAt])
+  @@map("ingestion_runs")
+}
