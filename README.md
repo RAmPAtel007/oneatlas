@@ -1,5 +1,7 @@
 # OneAtlas — AI model discovery & intelligence
 
+**Live:** https://oneatlas-silk.vercel.app · **API docs:** https://oneatlas-silk.vercel.app/api-docs
+
 Discover, compare and evaluate AI models across labs and providers: specs, pricing, capabilities, benchmarks and where to run them. Built with real data that refreshes daily.
 
 **Stack:** Next.js 16 (App Router, Cache Components) · React 19 · TypeScript · Tailwind CSS 4 · PostgreSQL · Prisma 7 · Zod · Recharts · Vitest
