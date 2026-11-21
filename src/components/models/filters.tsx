@@ -2,17 +2,19 @@
 
 import { Search, SlidersHorizontal, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useOptimistic, useState } from "react";
 import { cn } from "@/lib/cn";
 import { typeLabel } from "@/lib/format";
 import {
   CAPABILITY_PARAMS,
   modelsHref,
+  parseModelListQuery,
   type CapabilityParam,
   type ModelListQuery,
   type ModelTypeParam,
 } from "@/lib/query-schemas";
 import type { FilterOptions } from "@/server/services/models";
+import { usePendingNavigation } from "./pending";
 
 /**
  * Filter sidebar. The URL is the single source of truth: every change builds
@@ -46,17 +48,31 @@ const PRICE_OPTIONS = [
   { label: "≤ $10", value: 10 },
 ];
 
-export function ModelFilters({ query, options, view }: { query: ModelListQuery; options: FilterOptions; view?: string }) {
+export function ModelFilters({
+  query: serverQuery,
+  options,
+  view,
+}: {
+  query: ModelListQuery;
+  options: FilterOptions;
+  view?: string;
+}) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
-  const [text, setText] = useState(query.q ?? "");
+  const { pending, start } = usePendingNavigation();
+  // Optimistic copy of the URL state: a click shows as checked immediately,
+  // and quick successive clicks build on each other instead of on the stale
+  // server props. It snaps back to the server's version once the page loads.
+  const [query, setOptimisticQuery] = useOptimistic(serverQuery);
+  const [text, setText] = useState(serverQuery.q ?? "");
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const navigate = (overrides: Partial<ModelListQuery>) => {
-    startTransition(() => {
-      router.replace(modelsHref(query, { ...overrides, page: 1, view }), { scroll: false });
+  const apply = (next: ModelListQuery) => {
+    start(() => {
+      setOptimisticQuery(next);
+      router.replace(modelsHref(next, { view }), { scroll: false });
     });
   };
+  const navigate = (overrides: Partial<ModelListQuery>) => apply({ ...query, ...overrides, page: 1 });
 
   // Debounce free-text search so we don't navigate on every keystroke.
   useEffect(() => {
@@ -65,6 +81,16 @@ export function ModelFilters({ query, options, view }: { query: ModelListQuery; 
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text]);
+
+  // People often type a capability ("reas", "vision") into the name box.
+  // Offer it as a one-click filter instead of returning a confusing list.
+  const term = text.trim().toLowerCase();
+  const capabilityHints =
+    term.length >= 3
+      ? CAPABILITY_PARAMS.filter(
+          (c) => !query.cap?.includes(c) && (CAPABILITY_LABELS[c].toLowerCase().includes(term) || c.includes(term)),
+        )
+      : [];
 
   const toggleIn = <T extends string>(list: T[] | undefined, value: T) => {
     const set = new Set(list ?? []);
@@ -83,7 +109,7 @@ export function ModelFilters({ query, options, view }: { query: ModelListQuery; 
     (query.deprecated ? 1 : 0);
 
   return (
-    <aside className={cn("transition-opacity", pending && "opacity-60")}>
+    <aside aria-busy={pending}>
       <div className="relative mb-4">
         <Search className="pointer-events-none absolute top-2.5 left-3 size-4 text-muted" />
         <input
@@ -94,6 +120,24 @@ export function ModelFilters({ query, options, view }: { query: ModelListQuery; 
           className="h-9 w-full rounded-lg border bg-card pr-3 pl-9 text-sm outline-none focus:border-accent"
         />
       </div>
+      {capabilityHints.length > 0 && (
+        <div className="-mt-2 mb-4 flex flex-wrap items-center gap-1.5 text-xs text-muted">
+          <span>Filter by capability:</span>
+          {capabilityHints.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => {
+                setText("");
+                navigate({ q: undefined, cap: [...(query.cap ?? []), c] });
+              }}
+              className="rounded-full border border-accent/40 bg-accent-soft px-2 py-0.5 font-medium text-accent hover:border-accent"
+            >
+              {CAPABILITY_LABELS[c]}
+            </button>
+          ))}
+        </div>
+      )}
 
       <button
         type="button"
@@ -113,7 +157,7 @@ export function ModelFilters({ query, options, view }: { query: ModelListQuery; 
             type="button"
             onClick={() => {
               setText("");
-              startTransition(() => router.replace(modelsHref({}, { sort: query.sort, view }), { scroll: false }));
+              apply(parseModelListQuery({ sort: query.sort }));
             }}
             className="flex items-center gap-1 text-xs text-accent hover:underline"
           >

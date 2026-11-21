@@ -3,10 +3,11 @@
 import { LayoutGrid, Rows3 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useOptimistic } from "react";
 import { cn } from "@/lib/cn";
 import { formatNumber } from "@/lib/format";
 import { modelsHref, SORT_PARAMS, type ModelListQuery, type SortParam } from "@/lib/query-schemas";
+import { usePendingNavigation } from "./pending";
 
 const SORT_LABELS: Record<SortParam, string> = {
   newest: "Newest",
@@ -19,7 +20,8 @@ const SORT_LABELS: Record<SortParam, string> = {
 
 export function ModelsToolbar({ query, total, view }: { query: ModelListQuery; total: number; view: "table" | "grid" }) {
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const { pending, start } = usePendingNavigation();
+  const [sort, setOptimisticSort] = useOptimistic(query.sort);
 
   return (
     <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
@@ -30,12 +32,14 @@ export function ModelsToolbar({ query, total, view }: { query: ModelListQuery; t
         <label className="flex items-center gap-2 text-sm text-muted">
           Sort
           <select
-            value={query.sort}
-            onChange={(e) =>
-              startTransition(() =>
-                router.replace(modelsHref(query, { sort: e.target.value as SortParam, order: undefined, page: 1, view }), { scroll: false }),
-              )
-            }
+            value={sort}
+            onChange={(e) => {
+              const next = e.target.value as SortParam;
+              start(() => {
+                setOptimisticSort(next);
+                router.replace(modelsHref(query, { sort: next, order: undefined, page: 1, view }), { scroll: false });
+              });
+            }}
             className="h-8 rounded-md border bg-card px-2 text-sm text-foreground"
           >
             {SORT_PARAMS.map((s) => (

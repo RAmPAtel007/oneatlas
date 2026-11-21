@@ -5,6 +5,7 @@ import { modelHref } from "@/lib/format";
 import { globalSearch } from "@/server/services/catalog";
 import { ModelGrid, ModelTable } from "@/components/model-list";
 import { ModelFilters } from "@/components/models/filters";
+import { PendingNavigationProvider, PendingRegion } from "@/components/models/pending";
 import { ModelsToolbar } from "@/components/models/toolbar";
 import { Pagination } from "@/components/pagination";
 import { EmptyState, PageHeader, Skeleton } from "@/components/ui";
@@ -39,23 +40,26 @@ async function ModelsResults({ searchParams }: Pick<PageProps<"/models">, "searc
   const [result, options] = await Promise.all([listModels(query), getFilterOptions()]);
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[240px_1fr]">
-      <ModelFilters query={query} options={options} view={view} />
-      <div className="min-w-0">
-        <ModelsToolbar query={query} total={result.total} view={view} />
-        {result.items.length === 0 ? (
-          <EmptyState title="No models match these filters">
-            Try removing a filter or widening the price / context range.
-            {query.q && <DidYouMean q={query.q} />}
-          </EmptyState>
-        ) : view === "grid" ? (
-          <ModelGrid models={result.items} />
-        ) : (
-          <ModelTable models={result.items} />
-        )}
-        <Pagination page={result.page} totalPages={result.totalPages} href={(page) => modelsHref(query, { page, view })} />
+    // One shared transition: a click in the sidebar dims the results instantly.
+    <PendingNavigationProvider>
+      <div className="grid gap-8 lg:grid-cols-[240px_1fr]">
+        <ModelFilters query={query} options={options} view={view} />
+        <PendingRegion>
+          <ModelsToolbar query={query} total={result.total} view={view} />
+          {result.items.length === 0 ? (
+            <EmptyState title="No models match these filters">
+              Try removing a filter or widening the price / context range.
+              {query.q && <DidYouMean q={query.q} />}
+            </EmptyState>
+          ) : view === "grid" ? (
+            <ModelGrid models={result.items} />
+          ) : (
+            <ModelTable models={result.items} />
+          )}
+          <Pagination page={result.page} totalPages={result.totalPages} href={(page) => modelsHref(query, { page, view })} />
+        </PendingRegion>
       </div>
-    </div>
+    </PendingNavigationProvider>
   );
 }
 
